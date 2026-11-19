@@ -1,0 +1,26 @@
+pkgname=aiquota
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Local-first AI coding subscription quota monitor'
+arch=('x86_64' 'aarch64')
+license=('MIT')
+options=('!debug')
+makedepends=('go')
+source=()
+sha256sums=()
+# Build from the local checkout. Copy this PKGBUILD into the project root.
+build() {
+  cd "$startdir"
+  CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$pkgver" -o aiquota .
+}
+check() {
+  cd "$startdir"
+  go test . ./internal/...
+}
+package() {
+  cd "$startdir"
+  install -Dm755 aiquota "$pkgdir/usr/bin/aiquota"
+  install -Dm644 packaging/systemd/aiquota.service "$pkgdir/usr/lib/systemd/user/aiquota.service"
+  sed -i 's|%h/.local/bin/aiquota|/usr/bin/aiquota|' "$pkgdir/usr/lib/systemd/user/aiquota.service"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

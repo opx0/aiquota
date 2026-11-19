@@ -1,0 +1,208 @@
+--- a/shell/modules/bar/popouts/Content.qml
++++ b/shell/modules/bar/popouts/Content.qml
+@@ -12,6 +12,8 @@
+     id: root
+ 
+     required property PopoutState popouts
++    required property real availableWidth
++    signal quotaInteractionRequested()
+     readonly property Popout currentPopout: content.children.find(c => c.shouldBeActive) ?? null
+     readonly property Item current: currentPopout?.item ?? null
+ 
+@@ -102,6 +104,14 @@
+             }
+         }
+ 
++        Popout {
++            name: "aiquota"
++            sourceComponent: AIQuota {
++                maximumWidth: Math.max(0, root.availableWidth - Tokens.padding.large * 2)
++                onInteractionRequested: root.quotaInteractionRequested()
++            }
++        }
++
+         Popout {
+             name: "battery"
+             sourceComponent: Battery {}
+--- a/shell/modules/bar/popouts/Wrapper.qml
++++ b/shell/modules/bar/popouts/Wrapper.qml
+@@ -28,6 +28,16 @@
+     property alias currentName: popoutState.currentName
+     property alias hasCurrent: popoutState.hasCurrent
+     property real currentCenter
++    property bool quotaKeyboardActive: false
++
++    onHasCurrentChanged: {
++        if (!hasCurrent)
++            quotaKeyboardActive = false;
++    }
++    onCurrentNameChanged: {
++        if (currentName !== "aiquota")
++            quotaKeyboardActive = false;
++    }
+ 
+     property string detachedMode
+     property string queuedMode
+@@ -79,7 +89,7 @@
+ 
+     Keys.onPressed: event => {
+-        // Don't intercept keys when password popout is active - let it handle them
+-        if (currentName === "wirelesspassword") {
++        // Let interactive popouts handle keyboard navigation.
++        if (currentName === "wirelesspassword" || currentName === "aiquota") {
+             event.accepted = false;
+         }
+     }
+@@ -112,6 +122,11 @@
+ 
+         sourceComponent: Content {
+             popouts: popoutState
++            availableWidth: Math.max(0, root.parent.parent.width)
++            onQuotaInteractionRequested: {
++                if (root.hasCurrent && root.currentName === "aiquota" && !root.isDetached)
++                    root.quotaKeyboardActive = true;
++            }
+         }
+     }
+ 
+--- a/shell/modules/drawers/ContentWindow.qml
++++ b/shell/modules/drawers/ContentWindow.qml
+@@ -69,7 +69,7 @@
+     name: "drawers"
+     WlrLayershell.exclusionMode: ExclusionMode.Ignore
+     WlrLayershell.layer: (fsTransitionProg > 0 && contentItem.Config.general.showOverFullscreen) || (hasSpecialWorkspace && hasFullscreenOnNormalWs) ? WlrLayer.Overlay : WlrLayer.Top
+-    WlrLayershell.keyboardFocus: screenState.launcher || screenState.session ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
++    WlrLayershell.keyboardFocus: screenState.launcher || screenState.session || (panels.popouts.hasCurrent && panels.popouts.currentName === "aiquota" && panels.popouts.quotaKeyboardActive) ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+ 
+     mask: hasFullscreen ? emptyRegion : regions
+ 
+--- a/shell/modules/drawers/Interactions.qml
++++ b/shell/modules/drawers/Interactions.qml
+@@ -24,6 +24,41 @@
+     property bool osdShortcutActive
+     property bool utilitiesShortcutActive
+ 
++    function inQuotaCorner(x: real, y: real): bool {
++        return x >= width - 24 && x < width && y >= 0 && y < 12;
++    }
++
++    Timer {
++        id: quotaOpenDelay
++        interval: 3000
++        onTriggered: {
++            if (!root.fullscreen && !root.pressed && root.containsMouse && root.inQuotaCorner(root.mouseX, root.mouseY)) {
++                popouts.currentName = "aiquota";
++                popouts.currentCenter = root.width;
++                popouts.hasCurrent = true;
++            }
++        }
++    }
++
++    Timer {
++        id: quotaCloseDelay
++        interval: 180
++        onTriggered: {
++            if (popouts.currentName === "aiquota" && !popouts.isDetached &&
++                (!root.containsMouse || (!root.inQuotaCorner(root.mouseX, root.mouseY) && !root.inPopouts(root.mouseX, root.mouseY))))
++                popouts.hasCurrent = false;
++        }
++    }
++
++    function closeHoveredPopout(): void {
++        if (popouts.currentName === "aiquota" && popouts.hasCurrent) {
++            if (!quotaCloseDelay.running)
++                quotaCloseDelay.start();
++        } else {
++            popouts.hasCurrent = false;
++        }
++    }
++
+     function withinPanelHeight(panel: Item, x: real, y: real): bool {
+         const bounds = panel.visible ? panels.exposedRect(panel) : panels.panelGeometry(panel);
+         return y >= bounds.y - Config.border.rounding && y <= bounds.y + bounds.height + Config.border.rounding;
+@@ -126,6 +161,7 @@
+     onPressed: event => dragStart = Qt.point(event.x, event.y)
+     onContainsMouseChanged: {
+         if (!containsMouse) {
++            quotaOpenDelay.stop();
+             // Only hide if not activated by shortcut
+             if (!osdShortcutActive) {
+                 screenState.osd = false;
+@@ -139,7 +175,7 @@
+                 screenState.utilities = false;
+ 
+             if (!popouts.currentName.startsWith("traymenu") || ((popouts.current as StackView)?.depth ?? 0) <= 1) {
+-                popouts.hasCurrent = false;
++                root.closeHoveredPopout();
+                 bar.closeTray();
+             }
+ 
+@@ -161,10 +197,25 @@
+         const dragY = y - dragStart.y;
+ 
+         if (fullscreen) {
++            quotaOpenDelay.stop();
+             root.panels.osd.hovered = inSidePanel(panels.osd, x, y);
+             return;
+         }
+ 
++        if (inQuotaCorner(x, y) && !pressed) {
++            quotaCloseDelay.stop();
++            if (!(popouts.currentName === "aiquota" && popouts.hasCurrent) && !quotaOpenDelay.running)
++                quotaOpenDelay.start();
++            return;
++        }
++        quotaOpenDelay.stop();
++        if (popouts.currentName === "aiquota" && popouts.hasCurrent && inBarEdge(x, y)) {
++            root.closeHoveredPopout();
++            return;
++        }
++        if (inPopouts(x, y))
++            quotaCloseDelay.stop();
++
+         // Show bar in non-exclusive mode on hover
+         if (!screenState.bar && Config.bar.showOnHover && inBarEdge(x, y, true))
+             bar.isHovered = true;
+@@ -321,7 +372,7 @@
+         if (inBar && (!inDashboard || y >= Math.max(Config.border.minThickness, borderThickness))) {
+             bar.checkPopout(BarPosition.isHorizontal(bar.position) ? x : y);
+         } else if (!inDashboard && (!popouts.currentName.startsWith("traymenu") || ((popouts.current as StackView)?.depth ?? 0) <= 1) && !inPopouts(x, y)) {
+-            popouts.hasCurrent = false;
++            root.closeHoveredPopout();
+             bar.closeTray();
+         }
+     }
+--- a/shell/modules/nexus/PageRegistry.qml
++++ b/shell/modules/nexus/PageRegistry.qml
+@@ -57,6 +57,13 @@
+             category: "system"
+         },
+ 
++        {
++            label: Tr.tr("AIQuota"),
++            icon: "monitoring",
++            description: Tr.tr("Coding tool quotas"),
++            category: "system"
++        },
++
+         // Shell
+         {
+             label: Tr.tr("Panels"),
+--- a/shell/modules/nexus/PageCompRegistry.qml
++++ b/shell/modules/nexus/PageCompRegistry.qml
+@@ -106,6 +106,15 @@
+             }
+         },
+ 
++        Component {
++            // AIQuota
++            StackPage {
++                Component {
++                    AIQuotaSettings {}
++                }
++            }
++        },
++
+         // Shell
+         Component {
+             // Panels
