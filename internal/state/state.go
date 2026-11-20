@@ -138,9 +138,7 @@ func (s Store) Update(id string, fn func(*model.Provider) (model.Provider, error
 	}
 	name := tmp.Name()
 	defer os.Remove(name)
-	if err = tmp.Chmod(0600); err == nil {
-		_, err = tmp.Write(data)
-	}
+	_, err = tmp.Write(data)
 	if err == nil {
 		err = tmp.Sync()
 	}

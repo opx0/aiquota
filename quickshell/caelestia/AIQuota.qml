@@ -167,13 +167,6 @@ Flickable {
         return "";
     }
 
-    function timestamp(value: var): string {
-        if (!value)
-            return "Unknown";
-        const date = new Date(value);
-        return isNaN(date.getTime()) ? "Unknown" : Qt.formatDateTime(date, "dd MMM, HH:mm");
-    }
-
     function readCache(): void {
         if (!readingCache) {
             readingCache = true;
@@ -303,12 +296,6 @@ Flickable {
         return context && context !== name ? name + " · " + context : name;
     }
 
-    function windowCaption(window: var): string {
-        if (window.duration_minutes === 300 || window.duration_minutes === 10080)
-            return "";
-        return shortWindow(window);
-    }
-
     function displayTime(value: var): string {
         if (!value)
             return "Reset unknown";
@@ -318,21 +305,6 @@ Flickable {
         if (date.getTime() <= Date.now())
             return "Reset passed";
         return Qt.formatDateTime(date, "dd MMM, HH:mm");
-    }
-
-    function resetSummary(value: var): string {
-        const exact = displayTime(value);
-        if (exact === "Reset unknown")
-            return exact;
-        if (exact === "Reset passed")
-            return "Reset passed";
-        const date = new Date(value);
-        const minutes = Math.ceil((date.getTime() - Date.now()) / 60000);
-        const hoursLeft = Math.floor(minutes / 60);
-        const minutesLeft = String(minutes % 60).padStart(2, "0");
-        const isToday = date.toDateString() === new Date().toDateString();
-        const resetAt = Qt.formatDateTime(date, isToday ? "HH:mm" : "dd MMM HH:mm");
-        return resetAt + " | " + hoursLeft + ":" + minutesLeft;
     }
 
     function timeUntil(value: var): string {

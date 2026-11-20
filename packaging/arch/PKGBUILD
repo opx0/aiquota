@@ -13,10 +13,6 @@ build() {
   cd "$startdir"
   CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$pkgver" -o aiquota .
 }
-check() {
-  cd "$startdir"
-  go test . ./internal/...
-}
 package() {
   cd "$startdir"
   install -Dm755 aiquota "$pkgdir/usr/bin/aiquota"

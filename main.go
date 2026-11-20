@@ -17,9 +17,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"unsafe"
 
-	"github.com/mattn/go-isatty"
+	"github.com/charmbracelet/x/term"
 
 	"aiquota/internal/antigravity"
 	"aiquota/internal/claude"
@@ -143,7 +142,7 @@ func base(id string) model.Provider {
 	return p
 }
 func (a *app) snapshot() output {
-	out := output{SchemaVersion: 1, Providers: []model.Provider{}}
+	out := output{SchemaVersion: model.SchemaVersion, Providers: []model.Provider{}}
 	if a.configPath != "" {
 		current, err := newApp()
 		if err != nil {
@@ -364,7 +363,7 @@ func (a *app) refresh(ctx context.Context, id string) error {
 			return err
 		}
 		gate.Close()
-		return errors.New("Claude updates are event-driven; configure the Claude status line and wait for an observation")
+		return errors.New("claude updates are event-driven; configure the Claude status line and wait for an observation")
 	}
 	var errs []error
 	for _, provider := range []string{"codex", "antigravity"} {
@@ -506,15 +505,14 @@ func useColor(mode string, terminal bool) bool {
 	if os.Getenv("NO_COLOR") != "" || mode == "never" {
 		return false
 	}
-	return mode == "always" || (terminal && mode != "never" && os.Getenv("TERM") != "dumb")
+	return mode == "always" || (terminal && os.Getenv("TERM") != "dumb")
 }
 
 func isTerminal(f *os.File) bool {
 	if f == nil {
 		return false
 	}
-	fd := f.Fd()
-	return isatty.IsTerminal(fd) || isatty.IsCygwinTerminal(fd)
+	return term.IsTerminal(f.Fd())
 }
 
 func (a *app) runTUI(ctx context.Context) error {
@@ -539,19 +537,9 @@ func (a *app) runTUI(ctx context.Context) error {
 	})
 }
 
-func countdown(d time.Duration) string {
-	return tui.Countdown(d)
-}
-
-func render(w io.Writer, o output) {
-	renderAt(w, o, renderOptions{now: time.Now(), warningThreshold: 20})
-}
-
 func terminalWidth(w *os.File) int {
-	size := struct{ rows, cols, x, y uint16 }{}
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, w.Fd(), syscall.TIOCGWINSZ, uintptr(unsafe.Pointer(&size)))
-	if errno == 0 && size.cols > 0 {
-		return int(size.cols)
+	if width, _, err := term.GetSize(w.Fd()); err == nil && width > 0 {
+		return width
 	}
 	width, _ := strconv.Atoi(os.Getenv("COLUMNS"))
 	return width
@@ -631,7 +619,7 @@ func renderAt(w io.Writer, o output, opts renderOptions) {
 				}
 				fmt.Fprintf(w, "  resets %s", q.ResetsAt.Local().Format("02 Jan 15:04 MST"))
 				if q.ResetsAt.After(opts.now) {
-					fmt.Fprintf(w, " (in %s)", countdown(q.ResetsAt.Sub(opts.now)))
+					fmt.Fprintf(w, " (in %s)", tui.Countdown(q.ResetsAt.Sub(opts.now)))
 				} else {
 					fmt.Fprint(w, " (passed; awaiting update)")
 				}

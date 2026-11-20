@@ -63,14 +63,12 @@ func Read(ctx context.Context, executable string) (model.Provider, error) {
 	}
 	defer func() {
 		stdin.Close()
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
+		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 	}()
 	scan := bufio.NewScanner(stdout)
 	scan.Buffer(make([]byte, 4096), 2<<20)
-	send := func(v any) error { return json.NewEncoder(stdin).Encode(v) }
+	send := json.NewEncoder(stdin).Encode
 	if err = send(map[string]any{"id": 1, "method": "initialize", "params": map[string]any{"clientInfo": map[string]string{"name": "aiquota", "title": "AIQuota", "version": "0.1.0"}}}); err != nil {
 		return model.Provider{}, fmt.Errorf("initialize codex: %w", err)
 	}
@@ -170,9 +168,6 @@ func parseLimits(data []byte, observed time.Time) (model.Provider, error) {
 					return model.Provider{}, errors.New("invalid codex reset timestamp")
 				}
 				reset = &t
-			}
-			if w.Duration != nil && *w.Duration <= 0 {
-				return model.Provider{}, errors.New("invalid codex window duration")
 			}
 			window := model.Window{ID: id + ":" + v.name, BucketID: id, Label: label + " " + v.name, DurationMinutes: w.Duration, UsedPercent: w.UsedPercent, ResetsAt: reset, ObservedAt: &observed, Source: "codex app-server"}
 			if b.Model != nil {

@@ -32,9 +32,7 @@ def find_checkout(explicit=None):
     ]
     matches = []
     for candidate in candidates:
-        if not candidate:
-            continue
-        path = Path(candidate).expanduser().resolve()
+        path = candidate.expanduser().resolve()
         if (path / HOST_FILE).is_file() and path not in matches:
             matches.append(path)
     if len(matches) != 1:

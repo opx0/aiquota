@@ -66,8 +66,6 @@ type styles struct {
 }
 
 type appModel struct {
-	load        func() ([]model.Provider, error)
-	refresh     func(context.Context, string) error
 	ctx         context.Context
 	options     Options
 	styles      styles
@@ -125,8 +123,6 @@ func newModel(options Options, providers []model.Provider, now time.Time) *appMo
 		options.WarningThreshold = 20
 	}
 	return &appModel{
-		load:      options.Load,
-		refresh:   options.Refresh,
 		ctx:       context.Background(),
 		options:   options,
 		styles:    newStyles(options.Color, options.Output),
@@ -313,12 +309,12 @@ func (m *appModel) startRefresh(target string) tea.Cmd {
 	}
 	m.refreshing = true
 	return func() tea.Msg {
-		return refreshDoneMsg{err: m.refresh(m.ctx, target)}
+		return refreshDoneMsg{err: m.options.Refresh(m.ctx, target)}
 	}
 }
 
 func (m *appModel) loadSnapshot() {
-	providers, err := m.load()
+	providers, err := m.options.Load()
 	if err != nil {
 		m.notice = "Cache read failed: " + err.Error()
 		m.noticeUntil = m.now.Add(noticeDuration)
